@@ -1,0 +1,4 @@
+.claude/
+.npm-cache/
+tmp-npx-install-*/
+*.tgz

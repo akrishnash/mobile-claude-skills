@@ -1,0 +1,26 @@
+{
+  "name": "mobile-claude-skills",
+  "version": "1.1.0",
+  "description": "Install Flutter-focused Claude Code skills locally or globally.",
+  "bin": {
+    "mobile-claude-skills": "bin/install.js"
+  },
+  "files": [
+    "bin",
+    "flutter-arch",
+    "flutter-auth-deploy",
+    "flutter-backend",
+    "flutter-database",
+    "flutter-mobile",
+    "flutter-polish",
+    "flutter-ui",
+    "README.md"
+  ],
+  "keywords": [
+    "claude",
+    "claude-code",
+    "skills",
+    "flutter"
+  ],
+  "license": "MIT"
+}
