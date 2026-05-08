@@ -7,8 +7,6 @@ description: Deep Flutter UI skill covering widget architecture, Material 3 them
 
 ## Widget Architecture Fundamentals
 
-### The three widget types and when to use each
-
 ```dart
 // StatelessWidget — pure function of its inputs, no internal state
 class TrekCard extends StatelessWidget {
@@ -20,7 +18,6 @@ class TrekCard extends StatelessWidget {
 }
 
 // StatefulWidget — manages ephemeral UI state (animations, form fields, toggles)
-// Only use when state is truly local and doesn't need sharing
 class ExpandableSection extends StatefulWidget {
   const ExpandableSection({super.key, required this.child});
   final Widget child;
@@ -53,8 +50,6 @@ class TrekListScreen extends ConsumerWidget {
 
 ### const — the single biggest free performance win
 
-Every widget that doesn't change at runtime should be `const`. The Flutter framework skips rebuilding const widgets entirely.
-
 ```dart
 // Bad — rebuilds on every parent rebuild
 child: Padding(padding: EdgeInsets.all(16), child: Icon(Icons.star))
@@ -63,13 +58,9 @@ child: Padding(padding: EdgeInsets.all(16), child: Icon(Icons.star))
 child: const Padding(padding: EdgeInsets.all(16), child: Icon(Icons.star))
 ```
 
-Enable the lint rule `prefer_const_constructors` in `analysis_options.yaml` to catch missing `const` automatically.
-
----
+Enable `prefer_const_constructors` in `analysis_options.yaml` to catch missing `const` automatically.
 
 ## Material 3 Theming
-
-### Setting up a complete M3 theme
 
 ```dart
 ThemeData buildTheme(ColorScheme colorScheme) => ThemeData(
@@ -98,9 +89,7 @@ ThemeData buildTheme(ColorScheme colorScheme) => ThemeData(
 ### Dynamic color (system wallpaper colors on Android 12+)
 
 ```dart
-// pubspec.yaml: dynamic_color: ^1.7.0
-import 'package:dynamic_color/dynamic_color.dart';
-
+// dynamic_color: ^1.7.0
 class App extends StatelessWidget {
   @override
   Widget build(BuildContext context) => DynamicColorBuilder(
@@ -151,23 +140,7 @@ class AppColors extends ThemeExtension<AppColors> {
 // Access: Theme.of(context).extension<AppColors>()!.success
 ```
 
----
-
 ## Responsive & Adaptive Layouts
-
-### The layout decision tree
-
-```
-Is content fundamentally different between platforms?
-  YES → use Platform.isAndroid / kIsWeb to serve different widget trees
-  NO  → use LayoutBuilder / MediaQuery to scale the same tree
-
-Is it a breakpoint change (phone vs tablet)?
-  YES → LayoutBuilder with breakpoints
-  NO  → use Flexible/Expanded for proportional sizing
-```
-
-### LayoutBuilder — the responsive workhorse
 
 ```dart
 class AdaptiveLayout extends StatelessWidget {
@@ -182,39 +155,22 @@ class AdaptiveLayout extends StatelessWidget {
 }
 ```
 
-### MediaQuery — screen properties
-
 ```dart
-// Avoid calling MediaQuery.of(context) deeply — it triggers rebuild on any dimension change
-// Prefer: MediaQuery.sizeOf(context), MediaQuery.paddingOf(context) (Flutter 3.10+)
-final size = MediaQuery.sizeOf(context);
-final padding = MediaQuery.paddingOf(context); // safe area insets
-
-// Bottom padding for floating buttons above nav bar
+// Prefer granular MediaQuery methods — full MediaQuery.of(context) triggers rebuild on any dimension change
+final size = MediaQuery.sizeOf(context);         // Flutter 3.10+
+final padding = MediaQuery.paddingOf(context);   // safe area insets
 Padding(padding: EdgeInsets.only(bottom: MediaQuery.viewInsetsOf(context).bottom))
 ```
 
-### Safe area and notch handling
-
 ```dart
 // Always wrap top-level screens
-Scaffold(
-  body: SafeArea(
-    child: ...,
-  ),
-)
+Scaffold(body: SafeArea(child: ...))
 
-// For custom bottom sheets / overlays that need bottom inset
-Container(
-  padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 16),
-)
+// Custom bottom sheets / overlays
+Container(padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom + 16))
 ```
 
----
-
 ## Animations
-
-### Which animation API to use
 
 | Situation | Use |
 |---|---|
@@ -224,14 +180,9 @@ Container(
 | Complex choreography | `AnimationController` + `CurvedAnimation` + staggered intervals |
 | Heavy effects | Lottie / Rive |
 
-### AnimationController + Tween — the core pattern
+### AnimationController + Tween
 
 ```dart
-class PulseButton extends StatefulWidget {
-  @override
-  State<PulseButton> createState() => _PulseButtonState();
-}
-
 class _PulseButtonState extends State<PulseButton> with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   late final Animation<double> _scale;
@@ -261,7 +212,7 @@ class _PulseButtonState extends State<PulseButton> with SingleTickerProviderStat
 }
 ```
 
-### AnimatedSwitcher — swap between widgets with animation
+### AnimatedSwitcher
 
 ```dart
 AnimatedSwitcher(
@@ -273,46 +224,33 @@ AnimatedSwitcher(
 )
 ```
 
-### Hero transitions — shared element between routes
+### Hero transitions
 
 ```dart
 // Source screen
-Hero(
-  tag: 'trek-image-${trek.id}', // tag must be unique on screen
-  child: Image.network(trek.imageUrl),
-)
+Hero(tag: 'trek-image-${trek.id}', child: Image.network(trek.imageUrl))
 
 // Destination screen — same tag
-Hero(
-  tag: 'trek-image-${trek.id}',
-  child: Image.network(trek.imageUrl, fit: BoxFit.cover),
-)
+Hero(tag: 'trek-image-${trek.id}', child: Image.network(trek.imageUrl, fit: BoxFit.cover))
 ```
 
 ### Staggered animations
 
 ```dart
-class StaggeredList extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) => Column(
-    children: List.generate(items.length, (i) => AnimationConfiguration.staggeredList(
-      position: i,
-      duration: const Duration(milliseconds: 375),
-      child: SlideAnimation(
-        verticalOffset: 50,
-        child: FadeInAnimation(child: ItemCard(item: items[i])),
-      ),
-    )),
-  );
-}
-// Package: flutter_staggered_animations
+// flutter_staggered_animations package
+Column(
+  children: List.generate(items.length, (i) => AnimationConfiguration.staggeredList(
+    position: i,
+    duration: const Duration(milliseconds: 375),
+    child: SlideAnimation(
+      verticalOffset: 50,
+      child: FadeInAnimation(child: ItemCard(item: items[i])),
+    ),
+  )),
+)
 ```
 
----
-
 ## Custom Painting
-
-### CustomPainter — for anything widgets can't do
 
 ```dart
 class ArcProgressPainter extends CustomPainter {
@@ -325,16 +263,14 @@ class ArcProgressPainter extends CustomPainter {
     final center = Offset(size.width / 2, size.height / 2);
     final radius = size.width / 2 - 8;
 
-    // Background track
     canvas.drawCircle(center, radius, Paint()
       ..color = color.withOpacity(0.2)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 8);
 
-    // Progress arc
     canvas.drawArc(
       Rect.fromCircle(center: center, radius: radius),
-      -math.pi / 2, // start at top
+      -math.pi / 2,
       2 * math.pi * progress,
       false,
       Paint()
@@ -349,14 +285,11 @@ class ArcProgressPainter extends CustomPainter {
   bool shouldRepaint(ArcProgressPainter old) => old.progress != progress || old.color != color;
 }
 
-// Usage
 CustomPaint(
   size: const Size(120, 120),
   painter: ArcProgressPainter(progress: 0.7, color: Theme.of(context).colorScheme.primary),
 )
 ```
-
----
 
 ## Scroll & Sliver Widgets
 
@@ -366,7 +299,7 @@ CustomPaint(
 CustomScrollView(slivers: [
   SliverAppBar(
     expandedHeight: 240,
-    pinned: true, // stays visible when collapsed
+    pinned: true,
     stretch: true,
     flexibleSpace: FlexibleSpaceBar(
       title: const Text('Trek Name'),
@@ -381,8 +314,6 @@ CustomScrollView(slivers: [
 ### Infinite scroll with Riverpod
 
 ```dart
-final trekListProvider = StateNotifierProvider<TrekListNotifier, TrekListState>((ref) => TrekListNotifier(ref));
-
 class TrekListNotifier extends StateNotifier<TrekListState> {
   TrekListNotifier(this.ref) : super(const TrekListState());
 
@@ -399,7 +330,6 @@ class TrekListNotifier extends StateNotifier<TrekListState> {
   }
 }
 
-// In build:
 NotificationListener<ScrollEndNotification>(
   onNotification: (n) {
     if (n.metrics.extentAfter < 200) ref.read(trekListProvider.notifier).loadMore();
@@ -409,74 +339,48 @@ NotificationListener<ScrollEndNotification>(
 )
 ```
 
----
-
 ## Performance Optimization
 
-### RepaintBoundary — isolate expensive repaints
-
 ```dart
-// Wrap widgets that repaint independently to prevent propagation
-RepaintBoundary(
-  child: AnimatedContainer(...), // animation won't repaint siblings
-)
+// RepaintBoundary — isolate expensive repaints
+RepaintBoundary(child: AnimatedContainer(...))
+ListView.builder(itemBuilder: (_, i) => RepaintBoundary(child: TrekCard(trek: treks[i])))
 
-// Use on list items that have animations
-ListView.builder(
-  itemBuilder: (_, i) => RepaintBoundary(child: TrekCard(trek: treks[i])),
-)
-```
-
-### Keys — help Flutter identify widgets across rebuilds
-
-```dart
-// ValueKey — when widget identity matches a data value
+// ValueKey — identity matches a data value
 ListView(children: items.map((item) => TrekCard(key: ValueKey(item.id), trek: item)).toList())
 
-// GlobalKey — to access widget state from outside (use sparingly)
+// GlobalKey — access widget state from outside (use sparingly)
 final _formKey = GlobalKey<FormState>();
 Form(key: _formKey, ...)
 if (_formKey.currentState!.validate()) { ... }
 
-// UniqueKey — force rebuild on every render (e.g., reset state)
-child: SomeWidget(key: UniqueKey()) // new key = new State object
+// UniqueKey — force rebuild on every render (resets state)
+child: SomeWidget(key: UniqueKey())
 ```
 
-### ListView.builder vs ListView — always prefer builder for long lists
-
 ```dart
-// Bad for long lists — builds all items upfront
-ListView(children: items.map((e) => ItemWidget(e)).toList())
-
-// Good — builds only visible items + small buffer
+// Always prefer builder for long lists
 ListView.builder(
   itemCount: items.length,
   itemBuilder: (context, index) => ItemWidget(items[index]),
-  addRepaintBoundaries: true, // default true, but make it explicit
+  addRepaintBoundaries: true,
 )
 ```
 
-### Image performance
-
 ```dart
-// cached_network_image package — handles caching, loading, error states
+// cached_network_image package
 CachedNetworkImage(
   imageUrl: url,
   placeholder: (ctx, url) => const ShimmerPlaceholder(),
   errorWidget: (ctx, url, e) => const Icon(Icons.broken_image),
-  memCacheWidth: 400, // downscale for memory efficiency
+  memCacheWidth: 400,
   fit: BoxFit.cover,
 )
 
-// For local images, pre-cache on route push
-await precacheImage(FileImage(File(path)), context);
+await precacheImage(FileImage(File(path)), context); // pre-cache local images before navigation
 ```
 
----
-
 ## Accessibility
-
-### Semantics — what screen readers announce
 
 ```dart
 Semantics(
@@ -486,53 +390,35 @@ Semantics(
   child: GestureDetector(onTap: ..., child: DistanceWidget(trek)),
 )
 
-// For images, always provide semantic label
 Image.network(url, semanticLabel: 'Photo of ${trek.name}')
-
-// Exclude decorative elements
 ExcludeSemantics(child: DecorativeIcon())
 ```
 
-### Minimum touch target — 48×48 dp
-
 ```dart
-// Material 3 enforces this on buttons automatically
-// For custom tappable widgets, ensure minimum size:
-SizedBox(
-  width: 48,
-  height: 48,
-  child: IconButton(onPressed: ..., icon: const Icon(Icons.star)),
-)
-// Or use: constraints: BoxConstraints(minWidth: 48, minHeight: 48)
+// Material 3 enforces 48×48dp on buttons automatically
+// For custom tappable widgets:
+SizedBox(width: 48, height: 48, child: IconButton(onPressed: ..., icon: const Icon(Icons.star)))
 ```
 
-### Contrast — WCAG AA minimum
-
-- Normal text: 4.5:1 contrast ratio
+- Normal text: 4.5:1 contrast ratio minimum (WCAG AA)
 - Large text (18sp+): 3:1
-- Use `Theme.of(context).colorScheme.onSurface` over `colorScheme.surface` — never hardcode colors over dynamic backgrounds
-- Test with `flutter test --dart-define=FLUTTER_ACCESSIBILITY_FEATURES=all`
-
----
+- Use `Theme.of(context).colorScheme.onSurface` over hardcoded colors on dynamic backgrounds
 
 ## Common Patterns
 
-### Pull to refresh
-
 ```dart
+// Pull to refresh
 RefreshIndicator(
   onRefresh: () => ref.refresh(trekListProvider.future),
   child: ListView.builder(...),
 )
 ```
 
-### Bottom sheet — modal vs persistent
-
 ```dart
-// Modal (dismissable)
+// Modal bottom sheet
 showModalBottomSheet(
   context: context,
-  isScrollControlled: true, // allows full height
+  isScrollControlled: true,
   shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
   builder: (_) => DraggableScrollableSheet(
     expand: false,
@@ -542,18 +428,10 @@ showModalBottomSheet(
     builder: (_, controller) => ListView(controller: controller, children: [...]),
   ),
 );
-
-// Persistent (part of Scaffold)
-Scaffold(
-  bottomSheet: Container(height: 80, child: PlayerControls()),
-  body: ...,
-)
 ```
 
-### Shimmer loading placeholders
-
 ```dart
-// shimmer package
+// Shimmer loading placeholders — shimmer package
 Shimmer.fromColors(
   baseColor: colorScheme.surfaceContainerHighest,
   highlightColor: colorScheme.surface,
@@ -561,11 +439,8 @@ Shimmer.fromColors(
 )
 ```
 
-### Empty states and error states
-
-Always handle these — never show a blank screen.
-
 ```dart
+// Empty/error states — never show a blank screen
 class EmptyState extends StatelessWidget {
   const EmptyState({super.key, required this.message, this.icon, this.action});
   final String message;
@@ -584,9 +459,7 @@ class EmptyState extends StatelessWidget {
 }
 ```
 
----
-
-## Reference: Widget Cheat Sheet
+## Widget Cheat Sheet
 
 | Need | Widget |
 |---|---|

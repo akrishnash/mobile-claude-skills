@@ -7,15 +7,9 @@ description: Deep Flutter auth and deployment skill covering Firebase Auth (emai
 
 ## Firebase Auth Setup
 
-### Initialization
+// firebase_auth: ^4.19.0, firebase_core: ^2.32.0, google_sign_in: ^6.2.1, sign_in_with_apple: ^6.1.0
 
 ```dart
-// pubspec.yaml
-// firebase_auth: ^4.19.0
-// firebase_core: ^2.32.0
-// google_sign_in: ^6.2.1
-// sign_in_with_apple: ^6.1.0
-
 // main.dart
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -27,7 +21,6 @@ void main() async {
 ### Auth state as a Riverpod stream
 
 ```dart
-// lib/features/auth/providers/auth_provider.dart
 @riverpod
 Stream<User?> authState(AuthStateRef ref) => FirebaseAuth.instance.authStateChanges();
 
@@ -39,8 +32,6 @@ bool isAuthenticated(IsAuthenticatedRef ref) =>
 User? currentUser(CurrentUserRef ref) =>
     ref.watch(authStateProvider).valueOrNull;
 ```
-
----
 
 ## Email / Password Auth
 
@@ -109,7 +100,6 @@ class AuthError with _$AuthError {
     _ => AuthError.unknown(code),
   };
 
-  // Human-readable message for UI
   String get message => when(
     invalidEmail: () => 'Please enter a valid email address.',
     weakPassword: () => 'Password must be at least 6 characters.',
@@ -123,13 +113,9 @@ class AuthError with _$AuthError {
 }
 ```
 
----
-
 ## Google Sign-In
 
 ```dart
-// android/app/build.gradle — add SHA-1 fingerprint in Firebase Console first
-
 class GoogleAuthService {
   final _googleSignIn = GoogleSignIn(scopes: ['email', 'profile']);
   final _auth = FirebaseAuth.instance;
@@ -161,14 +147,11 @@ class GoogleAuthService {
 }
 ```
 
----
-
 ## Apple Sign-In (required for iOS App Store)
 
-```dart
-// pubspec.yaml: sign_in_with_apple: ^6.1.0
-// Add entitlement: com.apple.developer.applesignin in Xcode
+// sign_in_with_apple: ^6.1.0 — add entitlement: com.apple.developer.applesignin in Xcode
 
+```dart
 class AppleAuthService {
   final _auth = FirebaseAuth.instance;
 
@@ -209,19 +192,16 @@ class AppleAuthService {
 
   String sha256ofString(String input) {
     final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
+    return sha256.convert(bytes).toString();
   }
 }
 ```
 
----
-
 ## Biometric Authentication
 
-```dart
-// pubspec.yaml: local_auth: ^2.2.0
+// local_auth: ^2.2.0
 
+```dart
 class BiometricAuthService {
   final _localAuth = LocalAuthentication();
 
@@ -240,7 +220,7 @@ class BiometricAuthService {
         localizedReason: reason,
         options: const AuthenticationOptions(
           biometricOnly: false, // allow PIN fallback
-          stickyAuth: true, // don't cancel if user switches apps
+          stickyAuth: true,     // don't cancel if user switches apps
         ),
       );
     } on PlatformException {
@@ -248,20 +228,14 @@ class BiometricAuthService {
     }
   }
 }
-
-// android/app/src/main/AndroidManifest.xml — add:
-// <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
-// <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
+// AndroidManifest.xml: USE_BIOMETRIC + USE_FINGERPRINT permissions
 ```
-
----
 
 ## Secure Token Storage
 
-```dart
-// pubspec.yaml: flutter_secure_storage: ^9.0.0
-// Uses Android Keystore / iOS Keychain — hardware-backed on modern devices
+// flutter_secure_storage: ^9.0.0 — Android Keystore / iOS Keychain, hardware-backed on modern devices
 
+```dart
 class TokenStorage {
   static const _storage = FlutterSecureStorage(
     aOptions: AndroidOptions(encryptedSharedPreferences: true),
@@ -270,23 +244,18 @@ class TokenStorage {
 
   static const _accessTokenKey = 'access_token';
   static const _refreshTokenKey = 'refresh_token';
-  static const _userIdKey = 'user_id';
 
   Future<String?> getAccessToken() => _storage.read(key: _accessTokenKey);
   Future<void> saveAccessToken(String token) => _storage.write(key: _accessTokenKey, value: token);
   Future<String?> getRefreshToken() => _storage.read(key: _refreshTokenKey);
   Future<void> saveRefreshToken(String token) => _storage.write(key: _refreshTokenKey, value: token);
-
   Future<void> clearAll() => _storage.deleteAll();
 }
 ```
 
----
-
 ## GoRouter Auth Guard
 
 ```dart
-// lib/core/router/app_router.dart
 @riverpod
 GoRouter appRouter(AppRouterRef ref) {
   final authState = ref.watch(authStateProvider);
@@ -301,9 +270,7 @@ GoRouter appRouter(AppRouterRef ref) {
       if (isLoggedIn && isAuthRoute) return '/';
       return null;
     },
-    refreshListenable: GoRouterRefreshStream(
-      FirebaseAuth.instance.authStateChanges(),
-    ),
+    refreshListenable: GoRouterRefreshStream(FirebaseAuth.instance.authStateChanges()),
     routes: [
       GoRoute(path: '/', builder: (_, __) => const HomeScreen()),
       GoRoute(path: '/auth/login', builder: (_, __) => const LoginScreen()),
@@ -312,7 +279,6 @@ GoRouter appRouter(AppRouterRef ref) {
   );
 }
 
-// Helper to make GoRouter react to streams
 class GoRouterRefreshStream extends ChangeNotifier {
   GoRouterRefreshStream(Stream<dynamic> stream) {
     _sub = stream.listen((_) => notifyListeners());
@@ -327,11 +293,7 @@ class GoRouterRefreshStream extends ChangeNotifier {
 }
 ```
 
----
-
 ## Android Signing & Keystore
-
-### Generate a keystore (run once, keep the file secure)
 
 ```bash
 keytool -genkey -v \
@@ -342,19 +304,16 @@ keytool -genkey -v \
   -validity 10000
 ```
 
-### key.properties (never commit this file)
-
 ```properties
-# android/key.properties
+# android/key.properties — NEVER commit this file
 storePassword=your_store_password
 keyPassword=your_key_password
 keyAlias=trek-diary
 storeFile=/Users/you/keystores/trek-diary.jks
 ```
 
-### android/app/build.gradle — signing config
-
 ```groovy
+// android/app/build.gradle
 def keystoreProperties = new Properties()
 def keystorePropertiesFile = rootProject.file('key.properties')
 if (keystorePropertiesFile.exists()) {
@@ -381,34 +340,7 @@ android {
 }
 ```
 
-### ProGuard rules for common Flutter packages
-
-```pro
-# android/app/proguard-rules.pro
-
-# Flutter
--keep class io.flutter.** { *; }
--keep class io.flutter.plugins.** { *; }
-
-# Firebase
--keep class com.google.firebase.** { *; }
--keep class com.google.android.gms.** { *; }
-
-# Kotlin coroutines
--keepnames class kotlinx.coroutines.internal.MainDispatcherFactory {}
--keepnames class kotlinx.coroutines.CoroutineExceptionHandler {}
-
-# Gson / JSON
--keepattributes Signature
--keepattributes *Annotation*
--keep class sun.misc.Unsafe { *; }
-```
-
----
-
 ## Build Flavors (dev / staging / prod)
-
-### lib/core/config/app_config.dart
 
 ```dart
 enum AppEnvironment { dev, staging, prod }
@@ -435,8 +367,6 @@ class AppConfig {
 }
 ```
 
-### main_dev.dart / main_prod.dart
-
 ```dart
 // lib/main_dev.dart
 void main() {
@@ -451,22 +381,17 @@ void main() {
 }
 ```
 
-### Run flavor
-
 ```bash
 flutter run -t lib/main_dev.dart --flavor dev
 flutter run -t lib/main_prod.dart --flavor prod
 flutter build appbundle -t lib/main_prod.dart --flavor prod --release
 ```
 
----
-
 ## GitHub Actions CI/CD
 
 ```yaml
 # .github/workflows/release.yml
 name: Release to Play Store
-
 on:
   push:
     tags: ['v*']
@@ -476,16 +401,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-java@v4
         with: { java-version: '17', distribution: 'temurin' }
-
       - uses: subosito/flutter-action@v2
         with: { flutter-version: '3.24.0' }
 
       - name: Decode keystore
-        run: |
-          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/trek-diary.jks
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > android/app/trek-diary.jks
 
       - name: Create key.properties
         run: |
@@ -496,17 +418,11 @@ jobs:
           storeFile=trek-diary.jks
           EOF
 
-      - name: Get dependencies
-        run: flutter pub get
+      - run: flutter pub get
+      - run: flutter test
+      - run: flutter build appbundle -t lib/main_prod.dart --flavor prod --release
 
-      - name: Run tests
-        run: flutter test
-
-      - name: Build App Bundle
-        run: flutter build appbundle -t lib/main_prod.dart --flavor prod --release
-
-      - name: Upload to Play Store (internal track)
-        uses: r0adkll/upload-google-play@v1
+      - uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_STORE_SERVICE_ACCOUNT }}
           packageName: com.yourcompany.trekdiary
@@ -515,17 +431,7 @@ jobs:
           status: completed
 ```
 
-### Secrets to configure in GitHub
-
-```
-KEYSTORE_BASE64     — base64-encoded .jks file: base64 trek-diary.jks | pbcopy
-STORE_PASSWORD      — keystore password
-KEY_PASSWORD        — key password
-KEY_ALIAS           — key alias
-PLAY_STORE_SERVICE_ACCOUNT — JSON from Google Play Console service account
-```
-
----
+Secrets: `KEYSTORE_BASE64` (base64 .jks), `STORE_PASSWORD`, `KEY_PASSWORD`, `KEY_ALIAS`, `PLAY_STORE_SERVICE_ACCOUNT`
 
 ## Google Play Console — Release Track Strategy
 
@@ -533,15 +439,13 @@ PLAY_STORE_SERVICE_ACCOUNT — JSON from Google Play Console service account
 Internal Testing → Alpha → Beta → Production
 
 Internal:   QA team, instant availability, up to 100 testers
-Alpha:      Closed group, requires opt-in, good for early external feedback
-Beta:       Open to anyone who opts in, pre-production validation
-Production: Staged rollout (start at 5-10%, watch crash rate, then increase)
+Alpha:      Closed group, opt-in, early external feedback
+Beta:       Open opt-in, pre-production validation
+Production: Staged rollout (start 5-10%, watch crash rate, then increase)
 ```
 
-### Staged rollout via GitHub Actions
-
 ```yaml
-# Deploy to production at 10% rollout
+# Staged rollout via GitHub Actions
 - uses: r0adkll/upload-google-play@v1
   with:
     track: production
@@ -549,69 +453,30 @@ Production: Staged rollout (start at 5-10%, watch crash rate, then increase)
     status: inProgress  # or 'completed' for 100%
 ```
 
----
-
 ## App Versioning
 
 ```yaml
 # pubspec.yaml
 version: 1.2.3+45
-#         ^   ^
-#         |   build number (versionCode on Android — increment for every upload)
+#         ^   ^-- build number (versionCode on Android — increment every upload)
 #         semantic version displayed to users
 ```
 
-### Auto-increment build number in CI
-
 ```bash
-# Get build number from git tag count
 BUILD_NUMBER=$(git rev-list --count HEAD)
 flutter build appbundle --build-number=$BUILD_NUMBER --build-name=1.2.3
 ```
 
----
-
 ## Pre-Release Checklist
 
-Before promoting to production:
-
 - [ ] Remove all debug logging and print statements
-- [ ] `flutter analyze` — zero warnings
-- [ ] All tests pass: `flutter test`
-- [ ] Minimum SDK version set correctly in `android/app/build.gradle` (minSdkVersion)
+- [ ] `flutter analyze` — zero warnings; all tests pass
 - [ ] App bundle (not APK) submitted to Play Store
-- [ ] ProGuard rules don't strip required classes
 - [ ] SHA-1 fingerprint added to Firebase Console for release keystore
-- [ ] `google-services.json` is production (not dev) Firebase project
+- [ ] `google-services.json` is production Firebase project
 - [ ] Deep link domains verified in Play Console (App Links)
 - [ ] FCM server key is production key
-- [ ] `AndroidManifest.xml` — no debug flags, permissions are minimal
-- [ ] Privacy policy URL configured in Play Console
-- [ ] Screenshots, feature graphic, and store listing updated
-- [ ] Target SDK set to latest requirement (Play Store enforces this)
+- [ ] `AndroidManifest.xml` — no debug flags, permissions minimal
+- [ ] Target SDK set to latest Play Store requirement
 - [ ] Crash rate < 1% on existing releases before increasing rollout
-
----
-
-## Fastlane (Alternative to GitHub Actions)
-
-```ruby
-# fastlane/Fastfile
-default_platform(:android)
-
-platform :android do
-  lane :internal do
-    gradle(task: 'bundle', build_type: 'Release', flavor: 'prod', project_dir: 'android/')
-    upload_to_play_store(track: 'internal', aab: 'build/app/outputs/bundle/prodRelease/app-prod-release.aab')
-  end
-
-  lane :promote_to_production do
-    upload_to_play_store(track: 'internal', track_promote_to: 'production', rollout: '0.1')
-  end
-end
-```
-
-```bash
-fastlane internal        # build + upload to internal track
-fastlane promote_to_production  # promote internal → production at 10%
-```
+- [ ] Privacy policy URL, screenshots, and store listing updated

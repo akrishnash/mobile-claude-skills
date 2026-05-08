@@ -11,36 +11,19 @@ description: Deep Flutter database skill covering Drift (type-safe SQLite with D
 |---|---|---|
 | **Drift (SQLite)** | Relational data, complex queries, migrations, large datasets | Rapid prototyping, simple key-value |
 | **Isar** | High-performance NoSQL, full-text search, reactive queries | Need SQL JOINs, strict relational integrity |
-| **Hive** | Simple object storage, fast reads, settings-like data | Complex queries, relationships |
 | **SharedPreferences** | App settings, flags, small primitives only | Anything complex or large |
 | **Firestore** | Real-time sync, multi-device, social features | Offline-only apps, budget-sensitive reads |
 | **SQLite via sqflite** | Raw SQL needed, full control | Most cases — prefer Drift instead |
 
----
-
 ## Drift (Type-Safe SQLite)
 
-### Setup
-
-```yaml
-# pubspec.yaml
-dependencies:
-  drift: ^2.18.0
-  sqlite3_flutter_libs: ^0.5.0
-  path_provider: ^2.1.0
-  path: ^1.9.0
-
-dev_dependencies:
-  drift_dev: ^2.18.0
-  build_runner: ^2.4.0
-```
+// drift: ^2.18.0, sqlite3_flutter_libs: ^0.5.0, path_provider: ^2.1.0, path: ^1.9.0
+// dev: drift_dev: ^2.18.0, build_runner: ^2.4.0
 
 ### Defining tables
 
 ```dart
 // lib/data/local/tables/treks_table.dart
-import 'package:drift/drift.dart';
-
 class Treks extends Table {
   TextColumn get id => text()();
   TextColumn get name => text().withLength(min: 1, max: 200)();
@@ -71,12 +54,7 @@ class TrekStops extends Table {
 
 ```dart
 // lib/data/local/app_database.dart
-import 'package:drift/drift.dart';
-import 'package:drift/native.dart';
-import 'package:path/path.dart' as p;
-import 'package:path_provider/path_provider.dart';
-
-part 'app_database.g.dart'; // generated
+part 'app_database.g.dart';
 
 @DriftDatabase(tables: [Treks, TrekStops], daos: [TrekDao])
 class AppDatabase extends _$AppDatabase {
@@ -89,15 +67,10 @@ class AppDatabase extends _$AppDatabase {
   MigrationStrategy get migration => MigrationStrategy(
     onCreate: (m) => m.createAll(),
     onUpgrade: (m, from, to) async {
-      if (from < 2) {
-        await m.addColumn(treks, treks.isSynced);
-      }
-      if (from < 3) {
-        await m.createTable(trekStops);
-      }
+      if (from < 2) await m.addColumn(treks, treks.isSynced);
+      if (from < 3) await m.createTable(trekStops);
     },
     beforeOpen: (details) async {
-      // Enable WAL mode and foreign keys
       await customStatement('PRAGMA journal_mode=WAL');
       await customStatement('PRAGMA foreign_keys=ON');
     },
@@ -118,15 +91,12 @@ LazyDatabase _openConnection() => LazyDatabase(() async {
 class TrekDao extends DatabaseAccessor<AppDatabase> with _$TrekDaoMixin {
   TrekDao(super.db);
 
-  // Watch all treks — reactive stream
   Stream<List<Trek>> watchAllTreks() =>
       (select(treks)..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).watch();
 
-  // One-time fetch
   Future<List<Trek>> getAllTreks() =>
       (select(treks)..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
 
-  // Fetch with related stops (JOIN)
   Future<Map<Trek, List<TrekStop>>> getTreksWithStops() async {
     final query = select(treks).join([
       leftOuterJoin(trekStops, trekStops.trekId.equalsExp(treks.id)),
@@ -140,26 +110,21 @@ class TrekDao extends DatabaseAccessor<AppDatabase> with _$TrekDaoMixin {
     });
   }
 
-  // Insert or update
   Future<void> upsertTrek(TreksCompanion trek) =>
       into(treks).insertOnConflictUpdate(trek);
 
-  // Delete
   Future<int> deleteTrek(String id) =>
       (delete(treks)..where((t) => t.id.equals(id))).go();
 
-  // Mark unsynced
   Future<List<Trek>> getUnsynced() =>
       (select(treks)..where((t) => t.isSynced.equals(false))).get();
 
-  // Search
   Future<List<Trek>> searchTreks(String query) =>
       (select(treks)..where((t) => t.name.like('%$query%'))).get();
 
-  // Batch insert
-  Future<void> insertAll(List<TreksCompanion> newTreks) => batch((b) => b.insertAllOnConflictUpdate(treks, newTreks));
+  Future<void> insertAll(List<TreksCompanion> newTreks) =>
+      batch((b) => b.insertAllOnConflictUpdate(treks, newTreks));
 
-  // Transaction
   Future<void> createTrekWithStops(TreksCompanion trek, List<TrekStopsCompanion> stops) =>
       transaction(() async {
         await into(treks).insert(trek);
@@ -186,30 +151,13 @@ Stream<List<Trek>> trekList(TrekListRef ref) =>
     ref.watch(trekDaoProvider).watchAllTreks();
 ```
 
----
-
 ## Isar (Fast Embedded NoSQL)
 
-### Setup
-
-```yaml
-dependencies:
-  isar: ^3.1.0
-  isar_flutter_libs: ^3.1.0
-  path_provider: ^2.1.0
-dev_dependencies:
-  isar_generator: ^3.1.0
-  build_runner: ^2.4.0
-```
-
-### Collection schema
+// isar: ^3.1.0, isar_flutter_libs: ^3.1.0, path_provider: ^2.1.0
+// dev: isar_generator: ^3.1.0, build_runner: ^2.4.0
 
 ```dart
 // lib/data/local/collections/trek_collection.dart
-import 'package:isar/isar.dart';
-
-part 'trek_collection.g.dart';
-
 @collection
 class TrekCollection {
   Id id = Isar.autoIncrement;
@@ -228,15 +176,12 @@ class TrekCollection {
   @Index(type: IndexType.value, composite: [CompositeIndex('difficulty')])
   late String region;
 
-  @ignore // computed property, not stored
+  @ignore
   String get displayName => '$name ($region)';
 }
 ```
 
-### Database initialization and CRUD
-
 ```dart
-// lib/core/database/isar_database.dart
 class IsarDatabase {
   static Isar? _instance;
 
@@ -250,36 +195,25 @@ class IsarDatabase {
   }
 }
 
-// CRUD operations
 class TrekIsarRepository {
   Future<List<TrekCollection>> getAll() async {
     final isar = await IsarDatabase.instance;
     return isar.trekCollections.where().findAll();
   }
 
-  // Reactive query
   Stream<List<TrekCollection>> watchAll() async* {
     final isar = await IsarDatabase.instance;
     yield* isar.trekCollections.where().watch(fireImmediately: true);
   }
 
-  // Filter + sort
   Future<List<TrekCollection>> getByRegion(String region) async {
     final isar = await IsarDatabase.instance;
-    return isar.trekCollections
-        .filter()
-        .regionEqualTo(region)
-        .sortByDistanceDesc()
-        .findAll();
+    return isar.trekCollections.filter().regionEqualTo(region).sortByDistanceDesc().findAll();
   }
 
-  // Full-text search
   Future<List<TrekCollection>> search(String query) async {
     final isar = await IsarDatabase.instance;
-    return isar.trekCollections
-        .filter()
-        .nameContains(query, caseSensitive: false)
-        .findAll();
+    return isar.trekCollections.filter().nameContains(query, caseSensitive: false).findAll();
   }
 
   Future<void> save(TrekCollection trek) async {
@@ -299,62 +233,9 @@ class TrekIsarRepository {
 }
 ```
 
----
-
-## Hive (Key-Value Object Store)
-
-### Setup
-
-```yaml
-dependencies:
-  hive_flutter: ^1.1.0
-dev_dependencies:
-  hive_generator: ^2.0.0
-  build_runner: ^2.4.0
-```
-
-### Type adapter
-
-```dart
-@HiveType(typeId: 0)
-class UserPreferences extends HiveObject {
-  @HiveField(0) late String theme; // 'light' | 'dark' | 'system'
-  @HiveField(1) late bool notificationsEnabled;
-  @HiveField(2) late String distanceUnit; // 'km' | 'miles'
-  @HiveField(3, defaultValue: false) late bool offlineMapsEnabled;
-}
-```
-
-### Initialization and usage
-
-```dart
-// main.dart
-await Hive.initFlutter();
-Hive.registerAdapter(UserPreferencesAdapter());
-await Hive.openBox<UserPreferences>('preferences');
-await Hive.openBox('cache'); // untyped box for misc data
-
-// Repository
-class PreferencesRepository {
-  Box<UserPreferences> get _box => Hive.box('preferences');
-
-  UserPreferences get current => _box.get('user') ?? UserPreferences()
-    ..theme = 'system'
-    ..notificationsEnabled = true
-    ..distanceUnit = 'km';
-
-  Future<void> save(UserPreferences prefs) => _box.put('user', prefs);
-
-  // Reactive
-  Stream<BoxEvent> watch() => _box.watch(key: 'user');
-}
-```
-
----
-
 ## SharedPreferences
 
-Use only for simple primitives: auth tokens, onboarding flags, last sync time, user preferences that are not complex objects.
+// Use only for simple primitives: auth tokens, onboarding flags, last sync time
 
 ```dart
 @riverpod
@@ -383,22 +264,12 @@ class AppPreferences {
 }
 ```
 
----
-
 ## Firestore (Cloud Real-time Database)
 
-### Setup
-
-```yaml
-dependencies:
-  cloud_firestore: ^4.17.0
-  firebase_core: ^2.32.0
-```
-
-### Repository with offline persistence
+// cloud_firestore: ^4.17.0, firebase_core: ^2.32.0
 
 ```dart
-// main.dart — enable offline persistence (default on mobile, opt-in on web)
+// main.dart — enable offline persistence
 await Firebase.initializeApp();
 FirebaseFirestore.instance.settings = const Settings(persistenceEnabled: true, cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED);
 
@@ -409,13 +280,11 @@ class FirestoreTrekRepository {
   CollectionReference<Map<String, dynamic>> get _treks =>
       _db.collection('users').doc(_userId).collection('treks');
 
-  // Real-time stream
   Stream<List<Trek>> watchTreks() => _treks
       .orderBy('createdAt', descending: true)
       .snapshots()
       .map((s) => s.docs.map((d) => Trek.fromFirestore(d)).toList());
 
-  // Paginated fetch
   Future<List<Trek>> getTreks({DocumentSnapshot? startAfter, int limit = 20}) async {
     Query<Map<String, dynamic>> query = _treks.orderBy('createdAt', descending: true).limit(limit);
     if (startAfter != null) query = query.startAfterDocument(startAfter);
@@ -423,17 +292,13 @@ class FirestoreTrekRepository {
     return snapshot.docs.map(Trek.fromFirestore).toList();
   }
 
-  // Create
   Future<void> createTrek(Trek trek) => _treks.doc(trek.id).set(trek.toFirestore());
 
-  // Update (merge — only send changed fields)
   Future<void> updateTrek(String id, Map<String, dynamic> data) =>
       _treks.doc(id).update({...data, 'updatedAt': FieldValue.serverTimestamp()});
 
-  // Delete
   Future<void> deleteTrek(String id) => _treks.doc(id).delete();
 
-  // Batch write (up to 500 docs)
   Future<void> syncTreks(List<Trek> treks) async {
     final batch = _db.batch();
     for (final trek in treks) {
@@ -442,7 +307,6 @@ class FirestoreTrekRepository {
     await batch.commit();
   }
 
-  // Transaction (read-then-write atomically)
   Future<void> incrementViews(String trekId) => _db.runTransaction((tx) async {
     final ref = _treks.doc(trekId);
     final snap = await tx.get(ref);
@@ -451,7 +315,7 @@ class FirestoreTrekRepository {
 }
 ```
 
-### Firestore security rules (deploy via Firebase CLI)
+### Firestore security rules
 
 ```
 rules_version = '2';
@@ -466,11 +330,7 @@ service cloud.firestore {
 }
 ```
 
----
-
 ## Offline-First Architecture
-
-### The sync pattern
 
 ```dart
 // lib/data/sync/sync_manager.dart
@@ -484,7 +344,7 @@ class SyncManager extends _$SyncManager {
     state = const SyncState.syncing();
 
     try {
-      // 1. Push local changes to remote
+      // 1. Push local changes
       final unsynced = await ref.read(trekDaoProvider).getUnsynced();
       for (final trek in unsynced) {
         await ref.read(trekRemoteSourceProvider).createTrek(trek.toCreateRequest());
@@ -520,25 +380,19 @@ class AppLifecycleObserver extends WidgetsBindingObserver {
 ```
 
 ### Conflict resolution strategies
-
-| Strategy | When to use | How |
-|---|---|---|
-| **Last-write-wins** | Non-critical data, settings | Compare `updatedAt` timestamps |
-| **Server wins** | Master data, catalog items | Always overwrite local on pull |
-| **Client wins** | User-owned data | Push local, ignore server conflicts |
-| **Merge** | Collaborative data | Field-level merge with `SetOptions(merge: true)` |
-
----
+// last-write-wins: compare updatedAt timestamps
+// server-wins: always overwrite local on pull (catalog/master data)
+// client-wins: push local, ignore server conflicts (user-owned data)
+// merge: field-level merge with SetOptions(merge: true) (collaborative data)
 
 ## Data Encryption
 
-### Encrypting sensitive local data
+// flutter_secure_storage: ^9.0.0
 
 ```dart
-// pubspec.yaml: flutter_secure_storage: ^9.0.0
-
 // Encryption key stored in Keychain/Keystore (hardware-backed on Android 6+)
 final secureStorage = const FlutterSecureStorage();
+
 Future<Uint8List> getEncryptionKey() async {
   final existing = await secureStorage.read(key: 'db_encryption_key');
   if (existing != null) return base64.decode(existing);
@@ -552,8 +406,7 @@ Future<Uint8List> getEncryptionKey() async {
 final key = await getEncryptionKey();
 await Hive.openBox<UserPreferences>('secure_preferences', encryptionCipher: HiveAesCipher(key));
 
-// Encrypted Drift database (via sqlcipher_flutter_libs)
-// Add: sqlcipher_flutter_libs: ^0.5.0 (replaces sqlite3_flutter_libs)
+// Encrypted Drift database — use sqlcipher_flutter_libs instead of sqlite3_flutter_libs
 LazyDatabase _openEncryptedConnection(String password) => LazyDatabase(() async {
   final dir = await getApplicationDocumentsDirectory();
   final file = File(p.join(dir.path, 'encrypted.db'));
@@ -563,14 +416,10 @@ LazyDatabase _openEncryptedConnection(String password) => LazyDatabase(() async 
 });
 ```
 
----
-
 ## Migration Patterns
 
-### Drift migrations (recommended approach)
-
 ```dart
-// Always use a step-by-step migrator — never skip versions
+// Always use step-by-step migrator — never skip versions
 @override
 MigrationStrategy get migration => MigrationStrategy(
   onUpgrade: (m, from, to) async {
@@ -578,18 +427,14 @@ MigrationStrategy get migration => MigrationStrategy(
   },
 );
 
-// Define steps separately for clarity
 final migrationSteps = MigrationSteps(
   stepBy1: (m, schema) async {
-    // v1 → v2: add isSynced column
     await m.addColumn(schema.treks, schema.treks.isSynced);
   },
   stepBy2: (m, schema) async {
-    // v2 → v3: create trekStops table
     await m.createTable(schema.trekStops);
   },
   stepBy3: (m, schema) async {
-    // v3 → v4: rename column (requires create-copy-drop pattern in SQLite)
     await m.alterTable(TableMigration(schema.treks, columnTransformer: {
       schema.treks.name: schema.treks.name,
     }));
@@ -597,42 +442,20 @@ final migrationSteps = MigrationSteps(
 );
 ```
 
-### Testing migrations
-
-```dart
-// drift_dev provides a verifyData helper for migration tests
-test('migration from v1 to v2 adds isSynced column', () async {
-  final db = AppDatabase(DatabaseConnection(NativeDatabase.memory()));
-  // Generate a v1 schema and verify v2 migration succeeds
-  // See drift docs: package:drift_dev/api/migrations.dart
-});
-```
-
----
-
 ## Caching Strategy
 
-### Three-layer cache
-
-```
-1. In-memory (Riverpod state) — instant, cleared on restart
-2. Local DB (Drift/Isar/Hive) — fast, persists across restarts
-3. Remote (API/Firestore) — authoritative, always fresh
-```
+Three layers: in-memory (Riverpod state, instant) → Local DB (Drift/Isar, persists across restarts) → Remote (API/Firestore, authoritative)
 
 ```dart
 @riverpod
 class TrekListNotifier extends _$TrekListNotifier {
   @override
   Future<List<Trek>> build() async {
-    // Layer 1: serve from DB immediately (cache-first)
     final cached = await ref.read(trekDaoProvider).getAllTreks();
     if (cached.isNotEmpty) {
-      // Update in background
-      _refreshInBackground();
+      _refreshInBackground(); // update in background, serve cache immediately
       return cached;
     }
-    // Layer 2: fetch from network if cache is empty
     return _fetchFromNetwork();
   }
 
@@ -651,8 +474,6 @@ class TrekListNotifier extends _$TrekListNotifier {
   }
 }
 ```
-
----
 
 ## Quick Reference
 

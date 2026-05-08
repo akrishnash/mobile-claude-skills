@@ -7,12 +7,8 @@ description: Deep Flutter backend integration skill covering REST/GraphQL APIs w
 
 ## Dio Setup — Production-Ready HTTP Client
 
-### Full Dio configuration with interceptors
-
 ```dart
 // lib/core/network/dio_client.dart
-import 'package:dio/dio.dart';
-
 Dio createDio({required String baseUrl, required TokenStorage tokenStorage}) {
   final dio = Dio(BaseOptions(
     baseUrl: baseUrl,
@@ -23,7 +19,7 @@ Dio createDio({required String baseUrl, required TokenStorage tokenStorage}) {
 
   dio.interceptors.addAll([
     AuthInterceptor(dio: dio, tokenStorage: tokenStorage),
-    LoggingInterceptor(),          // debug only
+    LoggingInterceptor(),
     RetryInterceptor(dio: dio),
     ErrorInterceptor(),
   ]);
@@ -55,7 +51,7 @@ class AuthInterceptor extends Interceptor {
 
     if (_isRefreshing) {
       _pendingRequests.add((opts: err.requestOptions, handler: handler));
-      return; // queue until refresh completes
+      return;
     }
 
     _isRefreshing = true;
@@ -67,16 +63,12 @@ class AuthInterceptor extends Interceptor {
       final newToken = response.data['access_token'] as String;
       await tokenStorage.saveAccessToken(newToken);
 
-      // Retry original request
       handler.resolve(await _retry(err.requestOptions, newToken));
-
-      // Retry all pending
       for (final req in _pendingRequests) {
         req.handler.resolve(await _retry(req.opts, newToken));
       }
     } catch (_) {
       await tokenStorage.clearAll();
-      // Trigger logout via provider/stream
       handler.next(err);
     } finally {
       _isRefreshing = false;
@@ -124,23 +116,9 @@ class RetryInterceptor extends Interceptor {
 }
 ```
 
----
-
 ## Repository Pattern
 
-### The data layer architecture
-
-```
-API / Remote Source
-        ↓
-  Data Source (raw HTTP calls)
-        ↓
-  Repository (abstracts source, returns domain models)
-        ↓
-  Use Case / Provider
-        ↓
-     UI
-```
+Data layer: API/Remote Source → Data Source (raw HTTP) → Repository (domain models) → Use Case/Provider → UI
 
 ### Data source — raw API calls only
 
@@ -183,13 +161,6 @@ class TrekRemoteSourceImpl implements TrekRemoteSource {
 ### Repository — maps DTOs to domain models, handles errors
 
 ```dart
-// lib/data/repositories/trek_repository.dart
-abstract class TrekRepository {
-  Future<Either<AppError, List<Trek>>> getTreks({int page = 1});
-  Future<Either<AppError, Trek>> getTrek(String id);
-  Future<Either<AppError, Trek>> createTrek(CreateTrekParams params);
-}
-
 class TrekRepositoryImpl implements TrekRepository {
   TrekRepositoryImpl({required this.remoteSource, required this.localSource, required this.networkInfo});
   final TrekRemoteSource remoteSource;
@@ -205,7 +176,7 @@ class TrekRepositoryImpl implements TrekRepository {
     try {
       final dtos = await remoteSource.fetchTreks(page: page);
       final treks = dtos.map((d) => Trek.fromDto(d)).toList();
-      if (page == 1) await localSource.cacheTreks(treks); // only cache first page
+      if (page == 1) await localSource.cacheTreks(treks);
       return Right(treks);
     } on DioException catch (e) {
       return Left(AppError.fromDio(e));
@@ -213,8 +184,6 @@ class TrekRepositoryImpl implements TrekRepository {
   }
 }
 ```
-
----
 
 ## Error Handling
 
@@ -253,8 +222,6 @@ Map<String, List<String>> _parseValidationErrors(dynamic data) {
 ### Displaying errors in UI
 
 ```dart
-// In ConsumerWidget build:
-final state = ref.watch(trekProvider);
 state.whenOrNull(
   error: (err, _) => err is AppError
       ? err.when(
@@ -269,8 +236,6 @@ state.whenOrNull(
       : ErrorBanner(message: 'Unexpected error'),
 );
 ```
-
----
 
 ## Multipart File Upload
 
@@ -290,24 +255,18 @@ Future<String> uploadImage(File file) async {
     '/upload',
     data: formData,
     onSendProgress: (sent, total) {
-      final progress = sent / total;
-      ref.read(uploadProgressProvider.notifier).state = progress;
+      ref.read(uploadProgressProvider.notifier).state = sent / total;
     },
   );
   return response.data['url'] as String;
 }
 ```
 
----
-
 ## Firebase Cloud Messaging (Push Notifications)
 
-### Full FCM setup for Flutter
+// firebase_messaging: ^14.0.0, flutter_local_notifications: ^16.0.0
 
 ```dart
-// pubspec.yaml: firebase_messaging: ^14.0.0, flutter_local_notifications: ^16.0.0
-
-// lib/core/notifications/notification_service.dart
 class NotificationService {
   static final _localNotifications = FlutterLocalNotificationsPlugin();
 
@@ -327,18 +286,10 @@ class NotificationService {
 
   static Future<void> _setupFCM() async {
     await FirebaseMessaging.instance.requestPermission(alert: true, badge: true, sound: true);
-
-    // Foreground messages — show as local notification
-    FirebaseMessaging.onMessage.listen(_showLocalNotification);
-
-    // Background tap — app was in background, user tapped notification
-    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
-
-    // Terminated tap — app was closed, user tapped notification
-    final initial = await FirebaseMessaging.instance.getInitialMessage();
+    FirebaseMessaging.onMessage.listen(_showLocalNotification);        // foreground
+    FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap); // background tap
+    final initial = await FirebaseMessaging.instance.getInitialMessage(); // terminated tap
     if (initial != null) _handleNotificationTap(initial);
-
-    // Token refresh
     FirebaseMessaging.instance.onTokenRefresh.listen(_sendTokenToServer);
     final token = await FirebaseMessaging.instance.getToken();
     if (token != null) await _sendTokenToServer(token);
@@ -352,11 +303,8 @@ class NotificationService {
       notification.title,
       notification.body,
       NotificationDetails(
-        android: AndroidNotificationDetails(
-          'default_channel', 'Default',
-          importance: Importance.high, priority: Priority.high,
-          icon: '@mipmap/ic_launcher',
-        ),
+        android: AndroidNotificationDetails('default_channel', 'Default',
+          importance: Importance.high, priority: Priority.high, icon: '@mipmap/ic_launcher'),
         iOS: const DarwinNotificationDetails(),
       ),
       payload: jsonEncode(message.data),
@@ -365,26 +313,19 @@ class NotificationService {
 
   static void _handleNotificationTap(RemoteMessage message) {
     final type = message.data['type'] as String?;
-    if (type == 'trek_update') {
-      // Navigate via GoRouter
-      AppRouter.router.push('/treks/${message.data['trek_id']}');
-    }
+    if (type == 'trek_update') AppRouter.router.push('/treks/${message.data['trek_id']}');
   }
 
-  static Future<void> _sendTokenToServer(String token) async {
-    // Save to your backend so you can send targeted notifications
-    await GetIt.I<UserRepository>().updatePushToken(token);
-  }
+  static Future<void> _sendTokenToServer(String token) =>
+      GetIt.I<UserRepository>().updatePushToken(token);
 }
 ```
 
----
-
 ## WebSockets (Real-time)
 
-```dart
-// pubspec.yaml: web_socket_channel: ^2.4.0
+// web_socket_channel: ^2.4.0
 
+```dart
 class WebSocketService {
   WebSocketChannel? _channel;
   final _messageController = StreamController<Map<String, dynamic>>.broadcast();
@@ -393,22 +334,16 @@ class WebSocketService {
   Stream<Map<String, dynamic>> get messages => _messageController.stream;
 
   Future<void> connect(String url, String token) async {
-    _channel = WebSocketChannel.connect(
-      Uri.parse('$url?token=$token'),
-    );
+    _channel = WebSocketChannel.connect(Uri.parse('$url?token=$token'));
     _channel!.stream.listen(
       (data) => _messageController.add(jsonDecode(data as String)),
       onError: (e) => _reconnect(url, token),
       onDone: () => _reconnect(url, token),
     );
-    _startPing();
+    _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) => send({'type': 'ping'}));
   }
 
   void send(Map<String, dynamic> data) => _channel?.sink.add(jsonEncode(data));
-
-  void _startPing() {
-    _pingTimer = Timer.periodic(const Duration(seconds: 30), (_) => send({'type': 'ping'}));
-  }
 
   Future<void> _reconnect(String url, String token) async {
     _pingTimer?.cancel();
@@ -424,48 +359,7 @@ class WebSocketService {
 }
 ```
 
----
-
-## GraphQL
-
-```dart
-// pubspec.yaml: graphql_flutter: ^5.1.2
-
-// Setup
-final httpLink = HttpLink('https://api.example.com/graphql');
-final authLink = AuthLink(getToken: () async => 'Bearer ${await tokenStorage.getAccessToken()}');
-final client = GraphQLClient(link: authLink.concat(httpLink), cache: GraphQLCache());
-
-// Query
-const fetchTreks = '''
-  query GetTreks(\$page: Int!) {
-    treks(page: \$page) { id name distance difficulty }
-  }
-''';
-
-final result = await client.query(QueryOptions(
-  document: gql(fetchTreks),
-  variables: {'page': 1},
-  fetchPolicy: FetchPolicy.cacheAndNetwork, // show cache instantly, update from network
-));
-
-if (result.hasException) throw result.exception!;
-final data = result.data!['treks'] as List;
-
-// Mutation
-const createTrek = '''
-  mutation CreateTrek(\$name: String!, \$distance: Float!) {
-    createTrek(input: { name: \$name, distance: \$distance }) { id name }
-  }
-''';
-await client.mutate(MutationOptions(document: gql(createTrek), variables: {'name': 'Everest', 'distance': 120.0}));
-```
-
----
-
 ## Offline Request Queue
-
-For operations that must succeed even without connectivity (e.g., creating entries, syncing data).
 
 ```dart
 // lib/core/network/offline_queue.dart
@@ -483,8 +377,7 @@ class OfflineQueue extends _$OfflineQueue {
 
   Future<void> processAll(Dio dio) async {
     if (state.isEmpty) return;
-    final toProcess = List<QueuedRequest>.from(state);
-    for (final req in toProcess) {
+    for (final req in List<QueuedRequest>.from(state)) {
       try {
         await dio.request(req.path, data: req.body, options: Options(method: req.method));
         state = state.where((r) => r.id != req.id).toList();
@@ -493,12 +386,6 @@ class OfflineQueue extends _$OfflineQueue {
         break; // stop on first failure, preserve order
       }
     }
-  }
-
-  List<QueuedRequest> _loadFromStorage() {
-    final json = SharedPreferences.getInstance().then((p) => p.getString(_key));
-    // deserialize...
-    return [];
   }
 
   Future<void> _persist() async {
@@ -515,32 +402,11 @@ ref.listen(connectivityProvider, (_, next) {
 });
 ```
 
----
-
-## SSL Pinning
-
-```dart
-// pubspec.yaml: http_certificate_pinning: ^4.0.0
-// Or via Dio:
-
-(dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
-  final client = HttpClient();
-  client.badCertificateCallback = (cert, host, port) {
-    // Validate against pinned public key SHA-256
-    final pinnedHash = 'sha256/XXXX='; // your cert hash
-    return cert.pem.contains(pinnedHash);
-  };
-  return client;
-};
-```
-
----
-
 ## Connectivity Detection
 
-```dart
-// pubspec.yaml: connectivity_plus: ^5.0.2
+// connectivity_plus: ^5.0.2
 
+```dart
 @riverpod
 Stream<ConnectivityResult> connectivity(ConnectivityRef ref) =>
     Connectivity().onConnectivityChanged;
@@ -551,7 +417,6 @@ bool isOnline(IsOnlineRef ref) {
   return result != null && result != ConnectivityResult.none;
 }
 
-// Offline banner widget
 Consumer(builder: (_, ref, __) {
   final isOnline = ref.watch(isOnlineProvider);
   return AnimatedContainer(
@@ -562,8 +427,6 @@ Consumer(builder: (_, ref, __) {
   );
 })
 ```
-
----
 
 ## Dio Providers (Riverpod)
 
@@ -585,16 +448,3 @@ TrekRepository trekRepository(TrekRepositoryRef ref) => TrekRepositoryImpl(
   networkInfo: ref.watch(networkInfoProvider),
 );
 ```
-
----
-
-## Common Gotchas
-
-| Problem | Fix |
-|---|---|
-| 401 loops on refresh | Track `_isRefreshing` flag, queue concurrent requests |
-| Dio JSON parse error | Verify `Content-Type: application/json` in both request and response |
-| Multipart upload hanging | Set `receiveTimeout` longer for large files |
-| FCM token null on first launch | Call `getToken()` inside `requestPermission()` callback |
-| WebSocket disconnects silently | Implement ping/pong + reconnect on `onDone` |
-| CORS error on web | Must be fixed server-side; use a proxy in dev |

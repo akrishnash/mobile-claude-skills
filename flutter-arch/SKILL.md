@@ -7,24 +7,11 @@ description: Deep Flutter architecture skill covering clean architecture layers 
 
 ## Clean Architecture in Flutter
 
-### The three layers
+- **Presentation**: Widgets, Screens, ViewModels (Providers/BLoC) — no business logic
+- **Domain**: Entities, Use Cases, Repository interfaces — pure Dart, no Flutter deps
+- **Data**: Repository impls, Data Sources, DTOs, mappers — talks to external world
 
-```
-┌─────────────────────────────────┐
-│  Presentation Layer             │  Widgets, Screens, ViewModels (Providers/BLoC)
-│  — knows about UI only         │  No business logic here
-├─────────────────────────────────┤
-│  Domain Layer                   │  Entities, Use Cases, Repository interfaces
-│  — no Flutter, no external dep  │  Pure Dart — most stable layer
-├─────────────────────────────────┤
-│  Data Layer                     │  Repository impls, Data Sources, DTOs, mappers
-│  — talks to external world      │  API clients, databases, shared prefs
-└─────────────────────────────────┘
-```
-
-**Dependency rule**: each layer depends only on layers inward. Domain knows nothing about data or presentation. Presentation knows about domain via interfaces.
-
----
+**Dependency rule**: each layer depends only on layers inward. Domain knows nothing about data or presentation.
 
 ## Feature-First Folder Structure
 
@@ -66,27 +53,12 @@ lib/
     └── widgets/        # reusable across features
 ```
 
----
-
 ## Riverpod 2.0 — Code Generation Approach
 
-### Setup
-
-```yaml
-# pubspec.yaml
-dependencies:
-  flutter_riverpod: ^2.5.1
-  riverpod_annotation: ^2.3.5
-
-dev_dependencies:
-  riverpod_generator: ^2.4.3
-  build_runner: ^2.4.0
-```
+// flutter_riverpod: ^2.5.1, riverpod_annotation: ^2.3.5, riverpod_generator: ^2.4.3
 
 ```bash
-# Generate code
-flutter pub run build_runner watch --delete-conflicting-outputs
-# or: dart run build_runner watch
+dart run build_runner watch --delete-conflicting-outputs
 ```
 
 ### Provider types and when to use each
@@ -126,7 +98,7 @@ class TrekForm extends _$TrekForm {
     result.fold(
       (error) => state = state.copyWith(isSubmitting: false, error: error.message),
       (trek) {
-        ref.invalidate(trekListProvider); // refresh list after creating
+        ref.invalidate(trekListProvider);
         state = const TrekFormState();
       },
     );
@@ -169,43 +141,22 @@ ref.listen(trekFormProvider.select((s) => s.isSuccess), (_, isSuccess) {
 ### Provider communication — ref patterns
 
 ```dart
-// Watch — rebuild when dependency changes
-final treks = ref.watch(trekListProvider);
+final treks = ref.watch(trekListProvider);           // rebuild when dependency changes
+await ref.read(trekRepositoryProvider).deleteTrek(id); // one-time access, no rebuild
+ref.invalidate(trekListProvider);                    // force provider to re-fetch
+final refreshed = await ref.refresh(trekListProvider.future); // invalidate + return new future
+final name = ref.watch(currentUserProvider.select((u) => u?.displayName)); // rebuild only when field changes
 
-// Read — one-time access, no rebuild subscription
-await ref.read(trekRepositoryProvider).deleteTrek(id);
-
-// Invalidate — force provider to re-fetch
-ref.invalidate(trekListProvider);
-
-// Refresh — invalidate + return new future
-final refreshed = await ref.refresh(trekListProvider.future);
-
-// Select — rebuild only when specific field changes (optimization)
-final name = ref.watch(currentUserProvider.select((u) => u?.displayName));
-
-// onDispose — cleanup resources
 @override
 TrekListState build() {
-  ref.onDispose(() => _subscription?.cancel());
+  ref.onDispose(() => _subscription?.cancel()); // cleanup resources
   return const TrekListState();
 }
 ```
 
----
-
 ## Freezed — Immutable Models
 
-### Setup
-
-```yaml
-dependencies:
-  freezed_annotation: ^2.4.1
-
-dev_dependencies:
-  freezed: ^2.5.2
-  build_runner: ^2.4.0
-```
+// freezed_annotation: ^2.4.1, freezed: ^2.5.2
 
 ### Data class (value equality, copyWith, pattern matching)
 
@@ -228,7 +179,6 @@ class Trek with _$Trek {
     DateTime? updatedAt,
   }) = _Trek;
 
-  // Custom methods on frozen class
   const Trek._();
   bool get isLongDistance => distance > 20;
   String get formattedDistance => '${distance.toStringAsFixed(1)} km';
@@ -258,18 +208,13 @@ state.when(
   error: (msg) => ErrorScreen(message: msg),
 );
 
-// Or maybeWhen for partial handling
 state.maybeWhen(
   authenticated: (user) => Text('Hello, ${user.displayName}'),
   orElse: () => const SizedBox.shrink(),
 );
 ```
 
----
-
 ## Use Cases
-
-Use cases enforce single-responsibility for business logic. Each use case does exactly one thing.
 
 ```dart
 // lib/domain/usecases/create_trek_usecase.dart
@@ -280,7 +225,6 @@ class CreateTrekUseCase {
   final IdGenerator _idGenerator;
 
   Future<Either<AppError, Trek>> call(CreateTrekParams params) async {
-    // Validate
     if (params.name.trim().isEmpty) {
       return Left(AppError.validation({'name': ['Name cannot be empty']}));
     }
@@ -288,7 +232,6 @@ class CreateTrekUseCase {
       return Left(AppError.validation({'distance': ['Distance must be positive']}));
     }
 
-    // Build entity
     final trek = Trek(
       id: _idGenerator.generate(),
       name: params.name.trim(),
@@ -312,29 +255,12 @@ class CreateTrekParams with _$CreateTrekParams {
 }
 ```
 
----
-
 ## Dependency Injection — get_it + injectable
 
-### Setup
-
-```yaml
-dependencies:
-  get_it: ^7.7.0
-  injectable: ^2.4.2
-dev_dependencies:
-  injectable_generator: ^2.6.2
-  build_runner: ^2.4.0
-```
-
-### Registration
+// get_it: ^7.7.0, injectable: ^2.4.2, injectable_generator: ^2.6.2
 
 ```dart
 // lib/core/di/injection.dart
-import 'package:get_it/get_it.dart';
-import 'package:injectable/injectable.dart';
-import 'injection.config.dart';
-
 final getIt = GetIt.instance;
 
 @InjectableInit()
@@ -348,19 +274,15 @@ await configureDependencies(AppEnvironment.prod);
 ### Annotating classes
 
 ```dart
-// Singleton — one instance for the entire app lifetime
 @singleton
-class TokenStorage { ... }
+class TokenStorage { ... }          // one instance for app lifetime
 
-// LazySingleton — created on first access
 @lazySingleton
-class AppDatabase { ... }
+class AppDatabase { ... }           // created on first access
 
-// Injectable — new instance each time
 @injectable
-class CreateTrekUseCase { ... }
+class CreateTrekUseCase { ... }     // new instance each time
 
-// Environment-specific registrations
 @dev
 @LazySingleton(as: ApiClient)
 class MockApiClient implements ApiClient { ... }
@@ -369,7 +291,6 @@ class MockApiClient implements ApiClient { ... }
 @LazySingleton(as: ApiClient)
 class RealApiClient implements ApiClient { ... }
 
-// Factory with parameters
 @injectable
 class TrekListNotifier extends StateNotifier<TrekListState> {
   TrekListNotifier(@factoryParam String filter, TrekRepository repo)
@@ -380,22 +301,13 @@ class TrekListNotifier extends StateNotifier<TrekListState> {
 ### Riverpod + get_it bridge
 
 ```dart
-// Use get_it in Riverpod providers when needed
 @Riverpod(keepAlive: true)
 TrekRepository trekRepository(TrekRepositoryRef ref) => getIt<TrekRepository>();
 ```
 
----
-
 ## BLoC Pattern (Enterprise / Team Alternative)
 
-Use BLoC when you need strict event-driven flow, team conventions, or tooling.
-
-```yaml
-dependencies:
-  flutter_bloc: ^8.1.6
-  bloc: ^8.1.4
-```
+// flutter_bloc: ^8.1.6, bloc: ^8.1.4
 
 ```dart
 // Events — sealed, immutable, one per user action
@@ -407,7 +319,6 @@ class TrekEvent with _$TrekEvent {
   const factory TrekEvent.refreshTreks() = RefreshTreks;
 }
 
-// State
 @freezed
 class TrekState with _$TrekState {
   const factory TrekState.initial() = TrekInitial;
@@ -416,7 +327,6 @@ class TrekState with _$TrekState {
   const factory TrekState.error(String message) = TrekError;
 }
 
-// BLoC
 class TrekBloc extends Bloc<TrekEvent, TrekState> {
   TrekBloc(this._repository) : super(const TrekState.initial()) {
     on<LoadTreks>(_onLoad);
@@ -458,24 +368,16 @@ BlocProvider(
 )
 ```
 
----
-
 ## Testing Strategy
 
-### Three test levels
-
-```
-Unit Tests         — domain logic, use cases, repository impls (fast, no Flutter)
-Widget Tests       — individual widgets in isolation with fakes
-Integration Tests  — full app flow on device/emulator (slow, run in CI)
-```
+- **Unit Tests** — domain logic, use cases, repository impls (fast, no Flutter)
+- **Widget Tests** — individual widgets in isolation with fakes
+- **Integration Tests** — full app flow on device/emulator (slow, run in CI)
 
 ### Unit test — use case with mocks
 
 ```dart
 // pubspec.yaml dev: mocktail: ^1.0.4
-// test/domain/usecases/create_trek_usecase_test.dart
-
 class MockTrekRepository extends Mock implements TrekRepository {}
 class MockIdGenerator extends Mock implements IdGenerator {}
 
@@ -514,7 +416,6 @@ void main() {
 ### Widget test — with Riverpod overrides
 
 ```dart
-// test/features/trek_list/trek_list_screen_test.dart
 void main() {
   testWidgets('shows loading indicator while fetching', (tester) async {
     await tester.pumpWidget(
@@ -527,7 +428,6 @@ void main() {
         child: const MaterialApp(home: TrekListScreen()),
       ),
     );
-
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
   });
 
@@ -541,7 +441,7 @@ void main() {
       ),
     );
 
-    await tester.pump(); // let Future resolve
+    await tester.pump();
     expect(find.text('K2 Base Camp'), findsOneWidget);
   });
 }
@@ -551,10 +451,6 @@ void main() {
 
 ```dart
 // integration_test/app_test.dart
-import 'package:flutter_test/flutter_test.dart';
-import 'package:integration_test/integration_test.dart';
-import 'package:trek_diary/main.dart' as app;
-
 void main() {
   IntegrationTestWidgetsFlutterBinding.ensureInitialized();
 
@@ -562,70 +458,25 @@ void main() {
     app.main();
     await tester.pumpAndSettle();
 
-    // Tap add button
     await tester.tap(find.byIcon(Icons.add));
     await tester.pumpAndSettle();
 
-    // Fill form
     await tester.enterText(find.byKey(const Key('trek_name_field')), 'Annapurna Circuit');
     await tester.enterText(find.byKey(const Key('trek_distance_field')), '160');
 
-    // Submit
     await tester.tap(find.text('Create Trek'));
     await tester.pumpAndSettle();
 
-    // Verify
     expect(find.text('Annapurna Circuit'), findsOneWidget);
   });
 }
 ```
 
 ```bash
-# Run integration tests
 flutter test integration_test/ -d emulator-5554
 ```
 
----
-
-## Code Generation — Full Setup
-
-### analysis_options.yaml
-
-```yaml
-analyzer:
-  strong-mode:
-    implicit-casts: false
-    implicit-dynamic: false
-  errors:
-    invalid_annotation_target: ignore # suppress Freezed noise
-  exclude:
-    - '**/*.g.dart'
-    - '**/*.freezed.dart'
-
-linter:
-  rules:
-    - prefer_const_constructors
-    - prefer_const_declarations
-    - always_use_package_imports
-    - avoid_print
-    - prefer_final_locals
-    - require_trailing_commas
-```
-
-### Build runner commands
-
-```bash
-# One-time generation
-dart run build_runner build --delete-conflicting-outputs
-
-# Watch mode (during development)
-dart run build_runner watch --delete-conflicting-outputs
-
-# Specific file only
-dart run build_runner build --build-filter="lib/domain/entities/trek.dart"
-```
-
-### Common generated file patterns
+## Code Generation — Generated File Patterns
 
 | Annotation | Generated file | What it creates |
 |---|---|---|
@@ -635,32 +486,22 @@ dart run build_runner build --build-filter="lib/domain/entities/trek.dart"
 | `@injectable` | `injection.config.dart` | GetIt registration code |
 | `@DriftDatabase` | `*.g.dart` | Database, DAO, companion classes |
 
----
-
 ## Either — Explicit Error Handling
 
-```yaml
-dependencies:
-  fpdart: ^1.1.0  # Either, Option, TaskEither
-```
+// fpdart: ^1.1.0
 
 ```dart
-// Repository returns Either — caller decides how to handle error
 Future<Either<AppError, Trek>> getTrek(String id);
 
-// In use case — transform or chain
 Future<Either<AppError, TrekViewModel>> getTrekViewModel(String id) =>
     getTrek(id).then((result) => result.map(TrekViewModel.fromTrek));
 
-// In provider — surface to UI
 @riverpod
 Future<Trek> trekDetail(TrekDetailRef ref, String id) async {
   final result = await ref.watch(trekRepositoryProvider).getTrek(id);
-  return result.getOrElse((error) => throw error); // convert to AsyncError
+  return result.getOrElse((error) => throw error);
 }
 ```
-
----
 
 ## Architectural Anti-Patterns to Avoid
 
